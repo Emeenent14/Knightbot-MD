@@ -1,46 +1,64 @@
 async function tagAllCommand(sock, chatId, senderId) {
     try {
         // Get group metadata
-        const groupMetadata = await sock.groupMetadata(chatId);
-        const participants = groupMetadata.participants;
+        const groupMetadata = await sock.groupMetadata(chatId).catch(err => {
+            console.error('Failed to fetch group metadata:', err);
+            throw new Error('Could not retrieve group information');
+        });
+
+        const participants = groupMetadata?.participants || [];
         
-        if (!participants || participants.length === 0) {
+        if (participants.length === 0) {
             return await sock.sendMessage(chatId, { 
-                text: 'No participants found in this group.' 
+                text: '🚫 No members found in this group.' 
             });
         }
 
-        // Split into chunks to avoid message limits
-        const chunkSize = 15; // WhatsApp typically allows ~15-20 mentions per message
-        const chunks = [];
-        
-        for (let i = 0; i < participants.length; i += chunkSize) {
-            chunks.push(participants.slice(i, i + chunkSize));
-        }
-
-        // Send each chunk as separate message
-        for (const chunk of chunks) {
-            let message = '📢 Group Members:\n\n';
-            const mentions = [];
-            
-            chunk.forEach(participant => {
-                const number = participant.id.split('@')[0];
-                message += `@${number}\n`;
-                mentions.push(participant.id);
-            });
-
+        // First try bulk mention approach
+        try {
+            const mentions = participants.map(p => p.id);
             await sock.sendMessage(chatId, {
-                text: message,
-                mentions: mentions
+                text: '📢 Group Members:\n' + participants.map(p => `@${p.id.split('@')[0]}`).join('\n'),
+                mentions
             });
-
-            // Add small delay between messages
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            return;
+        } catch (bulkError) {
+            console.log('Bulk mention failed, trying sequential approach...', bulkError);
         }
+
+        // If bulk fails, try sequential tagging
+        let successCount = 0;
+        const failedNumbers = [];
+        
+        for (const participant of participants) {
+            try {
+                const number = participant.id.split('@')[0];
+                await sock.sendMessage(chatId, {
+                    text: `@${number}`,
+                    mentions: [participant.id]
+                });
+                successCount++;
+                
+                // Add delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 500));
+            } catch (individualError) {
+                console.error(`Failed to mention ${participant.id}:`, individualError);
+                failedNumbers.push(number);
+            }
+        }
+
+        // Send summary
+        let resultMessage = `✅ Successfully tagged ${successCount} members.`;
+        if (failedNumbers.length > 0) {
+            resultMessage += `\n🚫 Failed to tag: ${failedNumbers.join(', ')}`;
+        }
+        
+        await sock.sendMessage(chatId, { text: resultMessage });
+
     } catch (error) {
-        console.error('TagAll Error:', error);
+        console.error('TagAll Command Error:', error);
         await sock.sendMessage(chatId, {
-            text: '⚠️ Could not tag all members. The bot may need to be upgraded to tag everyone.'
+            text: `❌ Failed to tag members. Error: ${error.message || 'Unknown error'}`
         });
     }
 }
