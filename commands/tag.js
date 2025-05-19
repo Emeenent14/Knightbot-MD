@@ -1,4 +1,3 @@
-const isAdmin = require('../lib/isAdmin');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
@@ -16,28 +15,11 @@ async function downloadMediaMessage(message, mediaType) {
 
 async function tagCommand(sock, chatId, senderId, messageText, replyMessage) {
     try {
-        // Get group metadata first since we need it regardless
+        // Get group metadata
         const groupMetadata = await sock.groupMetadata(chatId);
         const participants = groupMetadata.participants;
         
-        // Check if bot is admin - this is still required for mentioning everyone
-        const botJid = sock.user.id.replace(/:.+@/, '@');
-        const botParticipant = participants.find(p => p.id.includes(botJid));
-        const botIsReallyAdmin = botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin');
-        
-        console.log('Bot JID:', botJid);
-        console.log('Bot participant:', botParticipant);
-        console.log('Bot admin status from metadata:', botIsReallyAdmin);
-        
-        // Bot still needs to be admin to tag everyone
-        if (!botIsReallyAdmin) {
-            await sock.sendMessage(chatId, { text: 'Please make the bot an admin first to use the tag feature.' });
-            return;
-        }
-        
-        // No check for sender admin status - anyone can use the tag command
-        
-        // Get all participants for mentioning
+        // Get all participants for mentioning (no admin check)
         const mentionedJidList = participants.map(p => p.id);
         
         if (replyMessage) {
@@ -90,7 +72,9 @@ async function tagCommand(sock, chatId, senderId, messageText, replyMessage) {
         }
     } catch (error) {
         console.error('Error in tagCommand:', error);
-        await sock.sendMessage(chatId, { text: 'An error occurred while executing the tag command.' });
+        await sock.sendMessage(chatId, { 
+            text: '❌ An error occurred while tagging members.' 
+        });
     }
 }
 
