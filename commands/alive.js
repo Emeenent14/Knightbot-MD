@@ -1,32 +1,36 @@
+const fs = require('fs').promises;
 const settings = require("../settings");
+
 async function aliveCommand(sock, chatId) {
     try {
-        const message = `*🤖 Knight Bot is Active!*\n\n` +
-                       `*Version:* ${settings.version}\n` +
-                       `*Status:* Online\n` +
-                       `*Mode:* Public\n\n` +
-                       `*🌟 Features:*\n` +
-                       `• Group Management\n` +
-                       `• Antilink Protection\n` +
-                       `• Fun Commands\n` +
-                       `• And more!\n\n` +
-                       `Type *.menu* for full command list`;
+        const message = 
+`┏━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 🤖 *Knight Bot Status*
+┣━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ 📦 *Version:* ${settings.version}
+┃ ⚡ *Status:* Online
+┃ 🔧 *Mode:* Public
+┣━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ 🌟 *Features:*
+┃ • Group Management
+┃ • Antilink Protection
+┃ • Fun Commands
+┃ • And more!
+┣━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ 📜 Type *.menu* to see commands
+┗━━━━━━━━━━━━━━━━━━━━━━━┛`;
 
+        // Read local image file
+        const imageBuffer = await fs.readFile('./assets/bot_image.jpg');
+        
         await sock.sendMessage(chatId, {
-            text: message,
-            contextInfo: {
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '120363161513685998@newsletter',
-                    newsletterName: 'KnightBot MD',
-                    serverMessageId: -1
-                }
-            }
+            image: imageBuffer,
+            caption: message,
+            mimetype: 'image/jpeg',
         });
     } catch (error) {
         console.error('Error in alive command:', error);
-        await sock.sendMessage(chatId, { text: 'Bot is alive and running!' });
+        await sock.sendMessage(chatId, { text: '✅ Bot is alive, but image failed to load.' });
     }
 }
 
