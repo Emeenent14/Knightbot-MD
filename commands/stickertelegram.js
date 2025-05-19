@@ -3,7 +3,7 @@ const { writeExifImg } = require('../lib/exif');
 const delay = time => new Promise(res => setTimeout(res, time));
 const fs = require('fs');
 const path = require('path');
-const sharp = require('sharp');
+const Jimp = require('jimp');
 const webp = require('node-webpmux');
 const crypto = require('crypto');
 const { exec } = require('child_process');
@@ -104,19 +104,73 @@ async function stickerTelegramCommand(sock, chatId, msg) {
                     // Check if sticker is animated or video
                     const isAnimated = sticker.is_animated || sticker.is_video;
                     
-                    // Convert to WebP using ffmpeg with optimized settings
-                    const ffmpegCommand = isAnimated
-                        ? `ffmpeg -i "${tempInput}" -vf "scale=512:512:force_original_aspect_ratio=decrease,fps=15,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000" -c:v libwebp -preset default -loop 0 -vsync 0 -pix_fmt yuva420p -quality 75 -compression_level 6 "${tempOutput}"`
-                        : `ffmpeg -i "${tempInput}" -vf "scale=512:512:force_original_aspect_ratio=decrease,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000" -c:v libwebp -preset default -loop 0 -vsync 0 -pix_fmt yuva420p -quality 75 -compression_level 6 "${tempOutput}"`;
+                    if (isAnimated) {
+                        // For animated stickers, we still need to use ffmpeg
+                        const ffmpegCommand = `ffmpeg -i "${tempInput}" -vf "scale=512:512:force_original_aspect_ratio=decrease,fps=15,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000" -c:v libwebp -preset default -loop 0 -vsync 0 -pix_fmt yuva420p -quality 75 -compression_level 6 "${tempOutput}"`;
 
-                    await new Promise((resolve, reject) => {
-                        exec(ffmpegCommand, (error) => {
-                            if (error) {
-                                console.error('FFmpeg error:', error);
-                                reject(error);
-                            } else resolve();
+                        await new Promise((resolve, reject) => {
+                            exec(ffmpegCommand, (error) => {
+                                if (error) {
+                                    console.error('FFmpeg error:', error);
+                                    reject(error);
+                                } else resolve();
+                            });
                         });
-                    });
+                    } else {
+                        // For static stickers, use Jimp
+                        try {
+                            // Read image with Jimp
+                            const image = await Jimp.read(imageBuffer);
+                            
+                            // Resize maintaining aspect ratio and adding padding if needed
+                            const MAX_SIZE = 512;
+                            
+                            // Calculate new dimensions while maintaining aspect ratio
+                            let width = image.getWidth();
+                            let height = image.getHeight();
+                            
+                            if (width > height) {
+                                if (width > MAX_SIZE) {
+                                    height = Math.round((height * MAX_SIZE) / width);
+                                    width = MAX_SIZE;
+                                }
+                            } else {
+                                if (height > MAX_SIZE) {
+                                    width = Math.round((width * MAX_SIZE) / height);
+                                    height = MAX_SIZE;
+                                }
+                            }
+                            
+                            // Resize image
+                            image.resize(width, height);
+                            
+                            // Create a new transparent canvas with desired dimensions
+                            const canvas = new Jimp(MAX_SIZE, MAX_SIZE, 0x00000000);
+                            
+                            // Calculate position to center the image
+                            const x = (MAX_SIZE - width) / 2;
+                            const y = (MAX_SIZE - height) / 2;
+                            
+                            // Composite the resized image onto the canvas
+                            canvas.composite(image, x, y);
+                            
+                            // Write to WebP file
+                            await canvas.writeAsync(tempOutput);
+                        } catch (err) {
+                            console.error('Error processing image with Jimp:', err);
+                            // Fallback to ffmpeg if Jimp fails
+                            const ffmpegCommand = `ffmpeg -i "${tempInput}" -vf "scale=512:512:force_original_aspect_ratio=decrease,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000" -c:v libwebp -preset default -loop 0 -vsync 0 -pix_fmt yuva420p -quality 75 -compression_level 6 "${tempOutput}"`;
+
+                            await new Promise((resolve, reject) => {
+                                exec(ffmpegCommand, (error) => {
+                                    if (error) {
+                                        console.error('FFmpeg fallback error:', error);
+                                        reject(error);
+                                    } else resolve();
+                                });
+                            });
+                        }
+                    }
 
                     // Read the WebP file
                     const webpBuffer = fs.readFileSync(tempOutput);
@@ -183,4 +237,4 @@ async function stickerTelegramCommand(sock, chatId, msg) {
     }
 }
 
-module.exports = stickerTelegramCommand; 
+module.exports = stickerTelegramCommand;
